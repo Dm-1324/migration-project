@@ -1,63 +1,75 @@
 # M365 Migration PM Agent Platform
 
-V1 implementation repository for the M365 tenant-to-tenant migration control plane.
+V1 backend for the M365 tenant-to-tenant migration control plane.
 
 ## Current status
 
-**Phase 1 — Data Foundation**
+- **Phase 1 — Data foundation**: FastAPI, SQLAlchemy, Alembic, CRUD, evidence and exceptions.
+- **Phase 2 — Deterministic readiness**: assessments, domain result contracts, readiness policy, lifecycle gates and audit trail.
+- **No M365 production writes** are implemented yet.
 
-The repository currently contains the runnable FastAPI backend with SQLAlchemy models, Alembic migrations, CRUD APIs, evidence/exception persistence, and tests.
+The architecture keeps readiness and lifecycle decisions deterministic. Copilot Studio will orchestrate the system in a later phase; it does not override backend policy.
 
-## Repository layout
-
-```text
-backend/
-├── app/
-│   ├── api/
-│   ├── models/
-│   ├── schemas/
-│   └── services/
-├── alembic/
-├── tests/
-├── .env.example
-├── alembic.ini
-├── requirements.txt
-└── README.md
-```
-
-## Quick start
+## Backend quick start
 
 ### Windows PowerShell
 
 ```powershell
 git clone https://github.com/Dm-1324/migration-project.git
 cd migration-project\backend
-py -3.11 -m venv .venv
+py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 Copy-Item .env.example .env
+alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
 Open **http://127.0.0.1:8000/docs**.
 
-### Run tests
+### Tests
 
 ```powershell
 cd backend
 .\.venv\Scripts\Activate.ps1
-pytest tests/ -v
+python -m pytest tests/ -v
 ```
 
-For macOS/Linux, use `python3 -m venv .venv` and `source .venv/bin/activate` instead.
+Expected: **13 tests passing**.
 
-## V1 roadmap
+## Phase 2 API surface
 
-1. Data foundation
-2. Deterministic readiness engine
-3. Mock M365 tools
-4. Microsoft Copilot Studio agents/workflows
-5. Next.js frontend
-6. Real M365 read-only integrations
-7. Hardening and observability
+| Method | Endpoint |
+|---|---|
+| POST | `/api/v1/batches/{batch_id}/assessments` |
+| GET | `/api/v1/batches/{batch_id}/assessments` |
+| GET | `/api/v1/assessments/{assessment_id}` |
+| POST | `/api/v1/assessments/{assessment_id}/domains/result` |
+| GET | `/api/v1/batches/{batch_id}/assessments/{domain}` |
+| GET | `/api/v1/readiness/{batch_id}` |
+| POST | `/api/v1/readiness/{batch_id}/calculate` |
+| GET | `/api/v1/runs/{run_id}` |
+| GET | `/api/v1/runs/{run_id}/status` |
+| GET | `/api/v1/audit` |
+| POST | `/api/v1/batches/{batch_id}/lifecycle/transition` |
+
+## Readiness policy
+
+The backend calculates readiness in this order:
+
+1. Missing/stale domain → `NOT_READY`
+2. Unavailable/error domain → `NOT_READY`
+3. Any blocked domain → `BLOCKED`
+4. Any warning domain → `WARNING`
+5. Otherwise → `READY`
+
+Only `READY` permits `PREFLIGHT_PASS` or `READY` lifecycle transitions.
+
+## Next phases
+
+1. **Phase 3** — mock Entra / Exchange Online / OneDrive tools and failure simulation.
+2. **Phase 4** — Microsoft Copilot Studio PM + specialist agents and workflows.
+3. **Phase 5** — Next.js frontend and PM chat/dashboard.
+4. **Phase 6** — real M365 read-only integrations.
+5. **Phase 7** — hardening, security, observability and production readiness.
