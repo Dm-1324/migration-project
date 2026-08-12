@@ -58,6 +58,10 @@ def list_assessments_for_batch(db: Session, batch_id: str) -> list[Assessment]:
 
 def submit_domain_result(db: Session, assessment_id: str, payload: DomainResultSubmit) -> AssessmentResult:
     assessment = get_assessment(db, assessment_id)
+    if assessment.run_status == "COMPLETED":
+        raise InvalidAssessmentInputError(
+            f"Assessment {assessment.run_id} is already completed; start a new assessment run to retry."
+        )
     requested = json.loads(assessment.requested_domains)
     if payload.domain not in requested:
         raise InvalidAssessmentInputError(f"Domain '{payload.domain}' was not requested for run {assessment.run_id} (requested: {', '.join(requested)}).")
