@@ -1,14 +1,15 @@
 # M365 Migration PM Agent Platform
 
-V1 backend for the M365 tenant-to-tenant migration control plane.
+V1 backend for the Microsoft 365 tenant-to-tenant migration control plane.
 
 ## Current status
 
 - **Phase 1 — Data foundation**: FastAPI, SQLAlchemy, Alembic, CRUD, evidence and exceptions.
 - **Phase 2 — Deterministic readiness**: assessments, domain result contracts, readiness policy, lifecycle gates and audit trail.
-- **No M365 production writes** are implemented yet.
+- **Phase 3 — Mock M365 tools**: deterministic Entra, Exchange Online and OneDrive/SharePoint adapters, typed tool APIs, failure simulation and Copilot context/resolver APIs.
+- **No real M365 production calls or production writes** are implemented yet.
 
-The architecture keeps readiness and lifecycle decisions deterministic. Copilot Studio will orchestrate the system in a later phase; it does not override backend policy.
+The architecture keeps readiness and lifecycle decisions deterministic. Copilot Studio will orchestrate the system in Phase 4; it does not override backend policy.
 
 ## Backend quick start
 
@@ -36,40 +37,61 @@ cd backend
 python -m pytest tests/ -v
 ```
 
-Expected: **13 tests passing**.
+The shipped Phase 3 suite includes the Phase 1/2 tests plus mock-adapter, failure-simulation, immutable-assessment and Copilot-resolver coverage.
 
-## Phase 2 API surface
+## Phase 3 API surface
 
-| Method | Endpoint |
-|---|---|
-| POST | `/api/v1/batches/{batch_id}/assessments` |
-| GET | `/api/v1/batches/{batch_id}/assessments` |
-| GET | `/api/v1/assessments/{assessment_id}` |
-| POST | `/api/v1/assessments/{assessment_id}/domains/result` |
-| GET | `/api/v1/batches/{batch_id}/assessments/{domain}` |
-| GET | `/api/v1/readiness/{batch_id}` |
-| POST | `/api/v1/readiness/{batch_id}/calculate` |
-| GET | `/api/v1/runs/{run_id}` |
-| GET | `/api/v1/runs/{run_id}/status` |
-| GET | `/api/v1/audit` |
-| POST | `/api/v1/batches/{batch_id}/lifecycle/transition` |
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/api/v1/tools/assess_entra` | Run Entra readiness tool for an assessment |
+| POST | `/api/v1/tools/assess_exchange` | Run Exchange Online readiness tool |
+| POST | `/api/v1/tools/assess_onedrive` | Run OneDrive/SharePoint readiness tool |
+| POST | `/api/v1/tools/start_batch_assessment/{batchId}` | Phase 3 stand-in for `WF_AssessBatch` |
+| GET | `/api/v1/tools/get_blockers/{batchId}` | Return open blocking exceptions |
+| GET | `/api/v1/copilot/batches/{batchId}/context` | Compact authoritative PM context |
+| GET | `/api/v1/copilot/migrations/{migrationId}/context` | Compact migration context |
+| GET | `/api/v1/resolve/migrations/{migrationCode}` | Resolve human migration code to UUID |
+| GET | `/api/v1/resolve/batches/{batchCode}` | Resolve human batch code to UUID; use `migration_code` if ambiguous |
 
-## Readiness policy
+### Failure simulation
 
-The backend calculates readiness in this order:
+The assessment tool accepts only these simulated error codes:
 
-1. Missing/stale domain → `NOT_READY`
-2. Unavailable/error domain → `NOT_READY`
-3. Any blocked domain → `BLOCKED`
-4. Any warning domain → `WARNING`
-5. Otherwise → `READY`
+`M365_TIMEOUT`, `M365_THROTTLED`, `AUTH_FAILED`, `RESOURCE_NOT_FOUND`, `UNKNOWN`.
 
-Only `READY` permits `PREFLIGHT_PASS` or `READY` lifecycle transitions.
+A simulated M365 failure becomes `UNAVAILABLE` at the domain level and `NOT_READY` overall; it never becomes `READY`.
+
+### Assessment immutability
+
+Once an assessment run is `COMPLETED`, its domain results and verdict are frozen. A retry creates a new assessment run rather than mutating the completed run.
+
+## Architecture boundary
+
+```text
+Copilot Studio (Phase 4)
+        |
+        v
+Typed FastAPI tool endpoints
+        |
+        +--> Entra mock adapter
+        +--> Exchange mock adapter
+        +--> OneDrive/SharePoint mock adapter
+        |
+        v
+Evidence + Exceptions + Assessment
+        |
+        v
+Deterministic Readiness Engine
+        |
+        v
+Authoritative SQL state
+```
+
+Phase 6 replaces the mock adapter internals with real Microsoft Graph / Exchange / SharePoint calls without changing the tool or readiness contracts.
 
 ## Next phases
 
-1. **Phase 3** — mock Entra / Exchange Online / OneDrive tools and failure simulation.
-2. **Phase 4** — Microsoft Copilot Studio PM + specialist agents and workflows.
-3. **Phase 5** — Next.js frontend and PM chat/dashboard.
-4. **Phase 6** — real M365 read-only integrations.
-5. **Phase 7** — hardening, security, observability and production readiness.
+1. **Phase 4** — Microsoft Copilot Studio PM + specialist agents and `WF_AssessBatch`.
+2. **Phase 5** — Next.js frontend and PM chat/dashboard.
+3. **Phase 6** — real M365 read-only integrations.
+4. **Phase 7** — security, observability, evaluation, E2E hardening and production readiness.
